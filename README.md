@@ -34,13 +34,12 @@ This project turns the ESP32-S3 into a compact, network-enabled MP3 receiver. It
 - PCM5102 DAC connected via I2S
 - Optional: buttons, display, etc.
 
-### DAC Connection (example)
+### Serial Connection for firmware upload
 
-| DAC Pin | ESP32-S3 Pin |
+| PCB Pin | External Uart |
 |---------|---------------|
-| DIN     | GPIO 26       |
-| BCK     | GPIO 27       |
-| LCK     | GPIO 25       |
+| TXD     | RX            |
+| RXD     | TX            |
 | GND     | GND           |
 | VCC     | 3.3V          |
 
@@ -65,5 +64,5 @@ These open-source libraries are used in this firmware:
 
 1. Clone this repository:
    ```bash
-   git clone https://github.com/your-username/esp32s3-mp3-streamer.git
+   git clone https://github.com/ulivee/ULivee-S1.git
 

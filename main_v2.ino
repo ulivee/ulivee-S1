@@ -8,6 +8,7 @@
 #include <time.h> // https://github.com/PaulStoffregen/Time
 #include "AudioTools.h" // https://github.com/pschatzmann/arduino-audio-tools
 #include "AudioTools/AudioCodecs/CodecMP3Helix.h" // https://github.com/pschatzmann/arduino-libhelix
+#include <ArduinoWebsockets.h>
 
 // Volume control
 // https://github.com/pschatzmann/arduino-audio-tools/wiki/Volume-Control
@@ -16,34 +17,42 @@
 // https://github.com/pschatzmann/arduino-audio-tools/blob/main/examples/examples-communication/http-client/streams-url_mp3_helix-i2s/streams-url_mp3_helix-i2s.ino
 
 
-// AP Configuration (hardcoded)
+// ===== Wi-Fi & Network Configuration =====
 const char* apSSID = "ULivee-S1";
 const char* apPassword = "12345678"; // Minimum 8 characters for WPA2
-// Replace with your Rails serv
+const unsigned long wifiCheckInterval = 5000;  // Check Wi-Fi every 5s
 const char* apiUrl = "http://192.168.5.110:3001/api/v1/audiocasts/register"; 
-// Env variables unmutable for admin connection
-const char* audiocastSecret = "123456789";
-unsigned long lastWiFiCheckTime = 0;
-const unsigned long wifiCheckInterval = 5000; // Check WiFi every 5 seconds
+const char* websockets_server_host = "192.168.5.110"; //Enter server adress
+const uint16_t websockets_server_port = 3001; // Enter server port
+const char* websockets_server_path = "/api/v1/cable";
 
 
+// ===== Audio & Hardware Config =====
 float currentVolume = 0.2;  // Default volume (0.0 to 1.0)
+const int wifiLedPin = 38;       // Wi-Fi status LED
+const int streamLedPin = 39;     // Streaming activity LED
 
 
-// LED pins
-const int wifiLedPin = 38;
-const int streamLedPin = 39;
-// Timing variables for LED blinking
+// ===== Timing & Intervals =====
+#define WIFI_BLINK_INTERVAL 1000  // Wi-Fi LED blink rate (disconnected)
+#define STREAM_BLINK_INTERVAL 50  // Stream LED blink rate (active)
+const unsigned long streamCheckInterval = 1000;  // Check stream every 1s
+const unsigned long connectRetryInterval = 5000; // WebSocket retry every 5s
+
+
+// ===== Runtime Variables =====
+unsigned long lastWiFiCheckTime = 0;
 unsigned long lastWifiBlink = 0;
 unsigned long lastStreamBlink = 0;
+unsigned long lastStreamCheckTime = 0;
+unsigned long lastConnectAttempt = 0;
 bool wifiLedState = false;
 bool streamLedState = false;
 
-unsigned long lastStreamCheckTime = 0;
-const unsigned long streamCheckInterval = 500; // Check every 500ms
 
-
-
+// ===== Libraries & Objects =====
+using namespace websockets;
+WebsocketsClient client;
 WebServer server(80);
 Preferences preferences;
 URLStream* audioStream = nullptr;
@@ -53,8 +62,43 @@ EncodedAudioStream* decoder = nullptr;
 StreamCopy* streamCopier = nullptr;
 
 
-bool connectToWiFi();
+// === Function declarations ===
+// Preferences 
+void storeStreamInfo(const String& url, uint32_t start_time, uint32_t duration);
+void storeUserInfo(const String& wifi_ssid, const String& wifi_password, const String& linking_token, const String& audiocast_name);
+void loadStreamInfo(String &url, uint32_t &start_time, uint32_t &duration, uint32_t &end_time);
+void loadUserInfo(String &linking_token, String &audiocast_name, String &secret);
+void loadWifiInfo(String &wifi_ssid, String &wifi_password);
+// Utils
+uint32_t getCurrentTime();
+String generateRandomSecret();
+void isStreamFinished();
+// Stream handlers
+void startAudioStream(uint32_t offset);
+void pauseAudioStream();
+void handleStreamReconnect();
+// AP 
+void startAPMode();
+void setupAPRoutes();
+void handleConnectingWifiView();
+void handleWifiConnectionLogic();
+void handleLinkAccountView();
+void handleLinkAccountLogic();
+void handleSuccess();
+void handleLinkFail();
+void handleWifiFail();
 bool registerWithRailsAPI();
+void handleImage();
+// Websockets
+void sendJsonResponse(int status, const char* type, const char* message, std::function<void(JsonObject&)> dataPopulator);
+void onMessageCallback(WebsocketsMessage message);
+void onEventsCallback(WebsocketsEvent event, String data);
+void connectToChannel();
+// Wifi
+bool connectToWiFi();
+void checkWiFiConnection();
+
+
 
 
 
@@ -158,11 +202,6 @@ uint32_t getCurrentTime() {
   return (uint32_t)now; // Explicit cast to uint32_t
 }
 
-void sendJsonResponse(int code, const JsonDocument& doc) {
-  String response;
-  serializeJson(doc, response);
-  server.send(code, "application/json", response);
-}
 
 
 String generateRandomSecret() {
@@ -183,38 +222,13 @@ String generateRandomSecret() {
 void isStreamFinished() {
   uint32_t end_time = preferences.getUInt("end_time", 0);
   uint32_t now = getCurrentTime();
-  if (now > end_time) {
+  if (streamCopier && now > end_time) {
     pauseAudioStream();
   }
 }
 
 
-// ************************************************************************
-// *                               Helpers                                *
-// ************************************************************************
 
-// --- CORS Helper ---
-void enableCORS() {
-  server.sendHeader("Access-Control-Allow-Origin", "*");
-  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
-}
-
-
-// --- CORS Preflight Handler ---
-void handleCORSOptions() {
-  enableCORS();
-  server.send(204); // No Content
-}
-
-
-// --- JSON Response Helper ---
-void sendJsonResponse(int statusCode, DynamicJsonDocument& doc) {
-  String response;
-  serializeJson(doc, response);
-  enableCORS();
-  server.send(statusCode, "application/json", response);
-}
 
 
 // ************************************************************************
@@ -267,13 +281,13 @@ void startAudioStream(uint32_t offset = 0) {
 
 
 void pauseAudioStream() {
-  if (streamCopier) {
+
     // Clean up audio objects
-    delete streamCopier;
-    delete decoder;
-    delete volumeControl;
-    delete i2sOutput;
-    delete audioStream;
+    if (streamCopier) delete streamCopier;
+    if (decoder) delete decoder;
+    if (volumeControl) delete volumeControl;
+    if (i2sOutput) delete i2sOutput;
+    if (audioStream) delete audioStream;
     
     streamCopier = nullptr;
     decoder = nullptr;
@@ -298,15 +312,13 @@ void pauseAudioStream() {
     
     // Debug output
     Serial.println("Audio stream stopped and preferences cleared");
-    printPreferences(); // Show empty preferences
-  }
+    
+  
 }
 
 
 
 void handleStreamReconnect() {
-
-  printPreferences();
 
   String url;
   uint32_t start_time, duration, end_time;
@@ -338,134 +350,6 @@ void handleStreamReconnect() {
 
 
 
-
-
-// ************************************************************************
-// *                             STA Endpoints                            *
-// ************************************************************************
-
-
-// Assumes enableCORS() adds CORS headers before sending response
-// sendJsonResponse() calls enableCORS() internally and sends JSON response
-
-void handlePlay() {
-  // Validate required parameters
-  if (!server.hasArg("url") || !server.hasArg("duration")) {
-    DynamicJsonDocument errorDoc(128);
-    errorDoc["error"] = "Missing required parameters (url, duration)";
-    sendJsonResponse(400, errorDoc);
-    return;
-  }
-
-  pauseAudioStream();
-
-  printPreferences(); // Debug
-
-  String stream_url = server.arg("url");
-  uint32_t start_time = getCurrentTime();
-  uint32_t duration = server.arg("duration").toInt();
-  uint32_t offset = server.hasArg("offset") ? server.arg("offset").toInt() : 0;
-  start_time = start_time - offset;
-
-  storeStreamInfo(stream_url, start_time, duration);
-  printPreferences(); // Debug
-
-  startAudioStream(offset);
-
-  DynamicJsonDocument doc(256);
-  doc["status"] = streamCopier ? "playing" : "ready";
-  doc["url"] = stream_url;
-  doc["duration"] = duration;
-  doc["offset"] = offset;
-
-  sendJsonResponse(200, doc);
-}
-
-
-
-void handlePause() {
-  pauseAudioStream();
-
-  DynamicJsonDocument doc(128);
-  doc["status"] = "success";
-  doc["message"] = "Stream paused";
-  sendJsonResponse(200, doc);
-}
-
-void handleVolume() {
-  DynamicJsonDocument doc(256);
-
-  if (!server.hasArg("level")) {
-    doc["status"] = "error";
-    doc["message"] = "Missing level parameter";
-    sendJsonResponse(400, doc);
-    return;
-  }
-
-  float newVolume = server.arg("level").toFloat();
-  if (newVolume < 0.0 || newVolume > 1.0) {
-    doc["status"] = "error";
-    doc["message"] = "Volume must be between 0.0 and 1.0";
-    sendJsonResponse(400, doc);
-    return;
-  }
-
-  currentVolume = newVolume;
-  if (volumeControl) {
-    volumeControl->setVolume(currentVolume);
-  }
-
-  doc["status"] = "success";
-  doc["message"] = "Volume updated";
-  doc["volume"] = currentVolume;
-  sendJsonResponse(200, doc);
-}
-
-void handleStatus() {
-  DynamicJsonDocument doc(256);
-
-  String url;
-  uint32_t start_time, duration, end_time;
-  loadStreamInfo(url, start_time, duration, end_time);
-
-  uint32_t now = getCurrentTime();
-  uint32_t remaining_time = (end_time > now) ? (end_time - now) : 0;
-  uint32_t played_time = (now > start_time) ? (now - start_time) : 0;
-
-  doc["status"] = streamCopier ? "playing" : "connected";
-  doc["url"] = url;
-  doc["duration"] = duration;
-  doc["start_time"] = start_time;
-  doc["end_time"] = end_time;
-  doc["played_time"] = played_time;
-  doc["remaining_time"] = remaining_time;
-
-  sendJsonResponse(200, doc);
-}
-
-void handleResetPreferences() {
-  if (server.method() != HTTP_POST) {
-    server.sendHeader("Allow", "POST");
-    enableCORS();
-    server.send(405, "text/plain", "Method Not Allowed");
-    return;
-  }
-
-  preferences.clear();
-
-  DynamicJsonDocument doc(256);
-  doc["status"] = "success";
-  doc["message"] = "All preferences data cleared";
-
-  sendJsonResponse(200, doc);
-
-  Serial.println("All preferences data has been reset");
-  printPreferences();
-
-  ESP.restart();
-}
-
-
 // ************************************************************************
 // *                             AP Endoints                              *
 // ************************************************************************
@@ -482,6 +366,20 @@ void startAPMode() {
 
 }
 
+
+void setupAPRoutes() {
+  // Register AP endpoints
+  LittleFS.begin();
+  server.on("/connect", handleConnectingWifiView); // Connecting to wifi view
+  server.on("/do_connect", handleWifiConnectionLogic); // Connect to wifi logic
+  server.on("/link", handleLinkAccountView); // Linking account view
+  server.on("/do_link", handleLinkAccountLogic); // Link to account logic
+  server.on("/success", handleSuccess); // Success
+  server.on("/link_fail", handleLinkFail); // Link account fail
+  server.on("/wifi_fail", handleWifiFail); // Wifi fails view
+  server.on("/image", HTTP_GET, handleImage);
+  server.begin();
+}
 
 
 
@@ -955,6 +853,7 @@ bool registerWithRailsAPI() {
     if (httpResponseCode == 200 || httpResponseCode == 201) {
       // Successfully registered
       Serial.println("Registration successful!");
+      preferences.putBool("isLinked", true);
       http.end();
       return true;
     } else {
@@ -986,6 +885,158 @@ void handleImage() {
   server.streamFile(file, "image/png");
   file.close();
 }
+
+
+
+// ************************************************************************
+// *                              Websockets                              *
+// ************************************************************************
+
+void sendJsonResponse(int status, const char* type, const char* message, std::function<void(JsonObject&)> dataPopulator = nullptr) {
+  StaticJsonDocument<512> resp;
+  resp["status"] = status;
+  resp["type"] = type;
+  resp["message"] = message;
+
+  if (dataPopulator) {
+    JsonObject data = resp.createNestedObject("data");
+    dataPopulator(data);
+  }
+
+  String out;
+  serializeJson(resp, out);
+  client.send(out);
+}
+
+
+void onMessageCallback(WebsocketsMessage message) {
+  String msg = message.data();
+  Serial.println("Received: " + msg);
+
+  StaticJsonDocument<512> doc;
+  DeserializationError error = deserializeJson(doc, msg);
+
+  if (error) {
+    Serial.println("JSON parse error");
+    sendJsonResponse(400, "error", "Invalid JSON format.");
+    return;
+  }
+
+  if (!doc.containsKey("action")) {
+    sendJsonResponse(400, "error", "Missing 'action' field.");
+    return;
+  }
+
+  String action = doc["action"].as<String>();
+  Serial.println("Action: " + action);
+
+  if (action == "play") {
+    String stream_url = doc["url"] | "";
+    uint32_t start_time = getCurrentTime();
+    uint32_t duration = doc["duration"] | 0;
+    uint32_t offset = doc["offset"] | 0;
+    start_time = start_time - offset;
+
+    pauseAudioStream();
+    storeStreamInfo(stream_url, start_time, duration);
+    startAudioStream(offset);
+
+    sendJsonResponse(200, "success", "Started stream playback!");
+
+  } else if (action == "pause") {
+    pauseAudioStream();
+    sendJsonResponse(200, "success", "Stream paused.");
+
+  } else if (action == "volume") {
+    float newVolume = doc["level"];
+    if (newVolume < 0.0 || newVolume > 1.0) {
+      sendJsonResponse(400, "error", "Volume must be between 0 and 1");
+      return;
+    }
+
+    currentVolume = newVolume;
+    if (volumeControl) {
+      volumeControl->setVolume(currentVolume);
+    }
+
+    sendJsonResponse(200, "success", "Volume updated", [&](JsonObject& data){
+      data["volume"] = newVolume;
+    });
+
+  } else if (action == "reset") {
+    preferences.clear();
+    sendJsonResponse(200, "success", "Audiocast reset. Restarting...");
+    delay(100);
+    ESP.restart();
+
+  } else if (action == "status") {
+    String url;
+    uint32_t start_time, duration, end_time;
+    loadStreamInfo(url, start_time, duration, end_time);
+
+    uint32_t now = getCurrentTime();
+    uint32_t remaining_time = (end_time > now) ? (end_time - now) : 0;
+    uint32_t played_time = (now > start_time) ? (now - start_time) : 0;
+
+    sendJsonResponse(200, "success", "Current stream status", [&](JsonObject& data){
+      data["status"] = streamCopier ? "playing" : "connected";
+      data["url"] = url;
+      data["duration"] = duration;
+      data["start_time"] = start_time;
+      data["end_time"] = end_time;
+      data["played_time"] = played_time;
+      data["remaining_time"] = remaining_time;
+      data["volume"] = currentVolume;
+    });
+
+  } else {
+    sendJsonResponse(404, "error", "Unknown action: ");
+  }
+}
+
+
+
+
+void onEventsCallback(WebsocketsEvent event, String data) {
+    if(event == WebsocketsEvent::ConnectionOpened) {
+        Serial.println("Connnection Opened");
+    } else if(event == WebsocketsEvent::ConnectionClosed) {
+        Serial.println("Connnection Closed");
+    } else if(event == WebsocketsEvent::GotPing) {
+        Serial.println("Got a Ping!");
+    } else if(event == WebsocketsEvent::GotPong) {
+        Serial.println("Got a Pong!");
+    }
+}
+
+
+void connectToChannel() {
+    Serial.println("Connected to Wifi, Connecting to server.");
+    // try to connect to Websockets server
+    String secret = preferences.getString("secret", "");
+    
+    // Append the token to the path as query parameter
+    String fullPath = String(websockets_server_path) + "?token=" + secret;
+    Serial.print("Connecting to WebSocket with path: ");
+    Serial.println(fullPath);
+
+
+    bool connected = client.connect(websockets_server_host, websockets_server_port, fullPath);
+    if(connected) {
+        Serial.println("Connected!");
+        
+        // Construct ActionCable subscription message
+        String identifier = "{\"channel\":\"AudiocastChannel\"}";
+        String payload = "{\"command\":\"subscribe\", \"identifier\": \"" + identifier + "\"}";
+    } else {
+        Serial.println("WebSocket connection failed.");
+    }
+    
+    // run callback when messages are received
+    client.onMessage(onMessageCallback);
+    client.onEvent(onEventsCallback);
+}
+
 
 
 
@@ -1033,6 +1084,13 @@ bool connectToWiFi() {
 
     handleStreamReconnect();
 
+    bool isLinked = preferences.getBool("isLinked", false);
+
+    if (isLinked) {
+      connectToChannel();
+    }
+
+    
     return true;
   } else {
     Serial.println("\nFailed to connect to WiFi");
@@ -1045,70 +1103,15 @@ void checkWiFiConnection() {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("WiFi connection lost. Attempting to reconnect...");
     if (connectToWiFi()) {
-      Serial.print("Wifi connected!");
+      Serial.println("WiFi reconnected.");
     } else {
-      Serial.print("Connection failed.!");
+      Serial.println("WiFi reconnection failed.");
     }
   }
 }
 
 
 
-
-
-
-
-// ************************************************************************
-// *                                Routes                                *
-// ************************************************************************
-
-
-void setupRoutes () {
-  // Register AP endpoints
-  LittleFS.begin();
-
-  server.on("/connect", handleConnectingWifiView); // Connecting to wifi view
-  server.on("/do_connect", handleWifiConnectionLogic); // Connect to wifi logic
-  server.on("/link", handleLinkAccountView); // Linking account view
-  server.on("/do_link", handleLinkAccountLogic); // Link to account logic
-  server.on("/success", handleSuccess); // Success
-  server.on("/link_fail", handleLinkFail); // Link account fail
-  server.on("/wifi_fail", handleWifiFail); // Wifi fails view
-  server.on("/image", HTTP_GET, handleImage);
-
-
-  // Register STA endpoints
-  // POST routes
-  server.on("/play", HTTP_POST, handlePlay);
-  server.on("/pause", HTTP_POST, handlePause);
-  server.on("/volume", HTTP_POST, handleVolume);
-  server.on("/reset", HTTP_POST, handleResetPreferences);
-
-  // GET route
-  server.on("/status", HTTP_GET, handleStatus);
-
-  // OPTIONS preflight handlers
-  server.on("/play", HTTP_OPTIONS, handleCORSOptions);
-  server.on("/pause", HTTP_OPTIONS, handleCORSOptions);
-  server.on("/volume", HTTP_OPTIONS, handleCORSOptions);
-  server.on("/reset", HTTP_OPTIONS, handleCORSOptions);
-
-  // Catch-all for undefined routes (optional)
-  server.onNotFound([]() {
-    enableCORS();
-    server.send(404, "application/json", "{\"error\":\"Not found\"}");
-  });
-
-
-
-
-
-
-
-
-  server.begin();
-
-}
 
 
 
@@ -1131,54 +1134,63 @@ void setup() {
   
   checkWiFiConnection();
   
-  setupRoutes();
+  setupAPRoutes();
   
 }
+
 
 
 
 void loop() {
-  server.handleClient();
+  client.poll(); // Process WebSocket events ASAP
+  server.handleClient(); // Handle HTTP requests
+  
+  unsigned long currentMillis = millis(); // Get once for consistency
 
-  // Check WiFi connection periodically
-  if (millis() - lastWiFiCheckTime >= wifiCheckInterval) {
+  // WiFi signal & connection check
+  if (currentMillis - lastWiFiCheckTime >= wifiCheckInterval) {
+    Serial.printf("RSSI: %d dBm\n", WiFi.RSSI());
     checkWiFiConnection();
-    lastWiFiCheckTime = millis();
+    lastWiFiCheckTime = currentMillis;
   }
 
-  // ---------------------------------------------------
+  // WiFi LED management
   if (WiFi.status() != WL_CONNECTED) {
-    if (millis() - lastWifiBlink >= 1000) { // 500ms blink
+    if (currentMillis - lastWifiBlink >= WIFI_BLINK_INTERVAL) {
       wifiLedState = !wifiLedState;
       digitalWrite(wifiLedPin, wifiLedState);
-      lastWifiBlink = millis();
+      lastWifiBlink = currentMillis;
     }
   } else {
-    digitalWrite(wifiLedPin, HIGH); // Solid ON
-  }
-  // ---------------------------------------------------
+    digitalWrite(wifiLedPin, HIGH); // Solid when connected
 
-  if (millis() - lastStreamCheckTime >= streamCheckInterval) {
+    if (!client.available() && (currentMillis - lastConnectAttempt >= connectRetryInterval)) {
+      connectToChannel();
+      lastConnectAttempt = currentMillis;
+    }
+  }
+
+  // Stream status check
+  if (currentMillis - lastStreamCheckTime >= streamCheckInterval) {
     isStreamFinished();
-    lastStreamCheckTime = millis();
+    lastStreamCheckTime = currentMillis;
   }
-  
-  
-  // Process audio if playing
-  if (streamCopier) {
-    streamCopier->copy();
 
-    // ---------------------------------------------------
-    if (millis() - lastStreamBlink >= 50) { // Fast blink
+  // Stream audio handling
+  if (streamCopier != nullptr) { // Explicit null check
+    streamCopier->copy();
+    yield();
+
+    // Stream activity LED
+    if (currentMillis - lastStreamBlink >= STREAM_BLINK_INTERVAL) {
       streamLedState = !streamLedState;
       digitalWrite(streamLedPin, streamLedState);
-      lastStreamBlink = millis();
+      lastStreamBlink = currentMillis;
     }
-    // ---------------------------------------------------
   } else {
-    // ---------------------------------------------------
-    digitalWrite(streamLedPin, LOW); // Off when not streaming
-    // ---------------------------------------------------
+    digitalWrite(streamLedPin, LOW);
   }
 }
+
+
 

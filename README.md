@@ -15,7 +15,7 @@ This project turns the ESP32-S3 into a compact, network-enabled MP3 receiver. It
 
 ## 🖼️ Device Image
 
-![ESP32-S3 Audio Board](https://your-image-url.com/image.jpg)
+![ESP32-S3 Audio Board](https://github.com/ulivee/audiocast_v2/blob/main/pcb_render.png)
 
 
 ## 📦 Features

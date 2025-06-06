@@ -1,8 +1,8 @@
 # 🎵 ESP32-S3 MP3 Streaming Receiver
 
-This firmware is built for the **ESP32-S3** microcontroller and **PCM5102 DAC**.
+This firmware is built for the **ESP32-S3** microcontroller with **PCM5102 DAC**.
 
-It supports wireless **MP3 audio streaming**, **decoding**, and **digital-to-analog output**, controlled via **WebSocket** commands. All main logic is in `main_v2.ino`.
+It supports wireless **MP3 audio streaming**, **decoding**, and **digital-to-analog output**, controlled via **WebSocket** commands. All code is in `main_v2.ino`.
 
 ---
 

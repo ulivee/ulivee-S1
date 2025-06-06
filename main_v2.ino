@@ -18,13 +18,13 @@
 
 
 // ===== Wi-Fi & Network Configuration =====
-const char* apSSID = "ULivee-S1";
-const char* apPassword = "12345678"; // Minimum 8 characters for WPA2
+const char* apSSID = AP_NAME;
+const char* apPassword = AP_PASSWORD; // Minimum 8 characters for WPA2
 const unsigned long wifiCheckInterval = 5000;  // Check Wi-Fi every 5s
-const char* apiUrl = "http://192.168.5.110:3001/api/v1/audiocasts/register"; 
-const char* websockets_server_host = "192.168.5.110"; //Enter server adress
-const uint16_t websockets_server_port = 3001; // Enter server port
-const char* websockets_server_path = "/api/v1/cable";
+const char* apiUrl = register_api_url; 
+const char* websockets_server_host = WEBSOCKET_SERVER; //Enter server adress
+const uint16_t websockets_server_port = WEBSOCKET_PORT; // Enter server port
+const char* websockets_server_path = WEBSOCKET_SERVER_PATH;
 
 
 // ===== Audio & Hardware Config =====
@@ -806,7 +806,7 @@ bool registerWithRailsAPI() {
   }
 
   WiFiClientSecure client;
-  client.setInsecure(); // ⚠️ Reemplaza por client.setCACert() en producción
+  client.setInsecure(); // REPLACE WITH client.setCACert() ON PRODUCTION
 
   HTTPClient http;
   // 1. Verify server reachability first

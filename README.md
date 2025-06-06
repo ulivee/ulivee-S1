@@ -1,17 +1,59 @@
 # ESP32-S3 MP3 Streaming Receiver
 
-This firmware is designed for a **custom commercial board** based on the **ESP32-S3** microcontroller. It enables wireless **MP3 audio streaming**, **decoding**, and **digital-to-analog conversion** using the **PCM5102 DAC**. Built using the Arduino IDE in C++, it leverages multiple open-source libraries for audio, networking, filesystem, and configuration management.
+This firmware is designed for **ESP32-S3** microcontroller and **PCM5102 DAC**. 
 
-## 🎵 Description
+It handles wireless **MP3 audio streaming**, **decoding**, and **digital-to-analog conversion** controlled from a websocket a server.
 
-This project turns the ESP32-S3 into a compact, network-enabled MP3 receiver. It supports:
+## Setup
 
-- Streaming MP3 audio over Wi-Fi (e.g., from an internet radio or LAN server)
-- Decoding MP3 audio using the Helix decoder
-- Sending decoded audio to a PCM5102 DAC via I2S
-- Serving a web interface or WebSocket for control/status
-- Saving settings persistently via Preferences
-- Managing files via LittleFS if needed
+This code is prepared to control an ESP32 audio player with websockets, so is needed to setup main code like next example. Can also customize  led pins, led intervals and stream and network check intervals. Remember to check I2S bus pins on startAudioStream() function.
+
+```
+// ===== Wi-Fi & Network Configuration =====
+const char* apSSID = "ULivee-S1";
+const char* apPassword = "12345678"; // Minimum 8 characters for WPA2
+const unsigned long wifiCheckInterval = 5000;  // Check Wi-Fi every 5s
+const char* apiUrl = "http://192.168.5.110:3001/api/v1/audiocasts/register"; 
+const char* websockets_server_host = "192.168.5.110"; //Enter server adress
+const uint16_t websockets_server_port = 3001; // Enter server port
+const char* websockets_server_path = "/api/v1/cable";
+
+
+// ===== Audio & Hardware Config =====
+float currentVolume = 0.2;  // Default volume (0.0 to 1.0)
+const int wifiLedPin = 38;       // Wi-Fi status LED
+const int streamLedPin = 39;     // Streaming activity LED
+
+
+// ===== Timing & Intervals =====
+#define WIFI_BLINK_INTERVAL 1000  // Wi-Fi LED blink rate (disconnected)
+#define STREAM_BLINK_INTERVAL 50  // Stream LED blink rate (active)
+const unsigned long streamCheckInterval = 1000;  // Check stream every 1s
+const unsigned long connectRetryInterval = 5000; // WebSocket retry every 5s
+```
+
+
+
+## How to use
+
+1.- Dynamic network configuration by this POST request on ESP32 AP webserver: 
+
+   http://192.168.4.1/connect?ssid=${wifiSSID}&password=${wifiPassword}&name=${audiocastName}&token=${token}
+
+   wifiSSID: your wifi SSID (Mandatory)
+   wifiPassword: your wifi password (Mandatory)
+   audiocastName: used to name the device (Optional)
+   token: used for link token to user acount (Optional)
+
+2.- When ESP32 has access to network will connect to websocket server. Now can be controlled with these actions:
+   - {"action": "play", "url": streamUrl, "duration": duration, "offset": offset}
+   - {"action": "pause"}
+   - {"action": "volume", "value": newValue}
+   - {"action": "status"}
+   - {"action": "reset"}
+
+   
+
 
 ## 🖼️ Device Image
 

@@ -1,80 +1,106 @@
-# ESP32-S3 MP3 Streaming Receiver
+# 🎵 ESP32-S3 MP3 Streaming Receiver
 
-This firmware is designed for **ESP32-S3** microcontroller and **PCM5102 DAC**. 
+This firmware is built for the **ESP32-S3** microcontroller and **PCM5102 DAC**.
 
-It handles wireless **MP3 audio streaming**, **decoding**, and **digital-to-analog conversion** controlled from a websocket a server.
+It supports wireless **MP3 audio streaming**, **decoding**, and **digital-to-analog output**, controlled via **WebSocket** commands. All main logic is in `main_v2.ino`.
 
-## Setup
+---
 
-This code is prepared to control an ESP32 audio player with websockets, so is needed to setup main code like next example. Can also customize  led pins, led intervals and stream and network check intervals. Remember to check I2S bus pins on startAudioStream() function.
+## ⚙️ Setup & Configuration
 
-```
+This code allows full control of the ESP32 audio player through WebSockets. You can customize LED pins, blink intervals, stream checks, and network settings.
+
+🛠 Make sure to review and configure the **I2S pins** inside the `startAudioStream()` function.
+
+### 🔧 Main Configuration Example
+
+```cpp
 // ===== Wi-Fi & Network Configuration =====
 const char* apSSID = "ULivee-S1";
-const char* apPassword = "12345678"; // Minimum 8 characters for WPA2
+const char* apPassword = "12345678";  // WPA2 requires at least 8 characters
 const unsigned long wifiCheckInterval = 5000;  // Check Wi-Fi every 5s
-const char* apiUrl = "http://192.168.5.110:3001/api/v1/audiocasts/register"; 
-const char* websockets_server_host = "192.168.5.110"; //Enter server adress
-const uint16_t websockets_server_port = 3001; // Enter server port
-const char* websockets_server_path = "/api/v1/cable";
+
+const char* apiUrl = "http://192.168.7.42:8080/api/v1/devices/register"; // Api endpoint to register this device
+const char* websockets_server_host = "192.168.7.42";     // WebSocket server IP
+const uint16_t websockets_server_port = 8080;            // WebSocket port
+const char* websockets_server_path = "/ws/connect";      // WebSocket path
 
 
 // ===== Audio & Hardware Config =====
-float currentVolume = 0.2;  // Default volume (0.0 to 1.0)
-const int wifiLedPin = 38;       // Wi-Fi status LED
-const int streamLedPin = 39;     // Streaming activity LED
-
+float currentVolume = 0.2;         // Default volume (0.0 to 1.0)
+const int wifiLedPin = 38;         // Wi-Fi status LED
+const int streamLedPin = 39;       // Streaming activity LED
 
 // ===== Timing & Intervals =====
-#define WIFI_BLINK_INTERVAL 1000  // Wi-Fi LED blink rate (disconnected)
-#define STREAM_BLINK_INTERVAL 50  // Stream LED blink rate (active)
-const unsigned long streamCheckInterval = 1000;  // Check stream every 1s
-const unsigned long connectRetryInterval = 5000; // WebSocket retry every 5s
+#define WIFI_BLINK_INTERVAL 1000   // Wi-Fi LED blink rate (disconnected)
+#define STREAM_BLINK_INTERVAL 50   // Stream LED blink rate (active)
+const unsigned long streamCheckInterval = 1000;    // Check stream every 1s
+const unsigned long connectRetryInterval = 5000;   // Retry WebSocket every 5s
 ```
 
 
 
-## How to use
+## 🚀 How to Use
 
-1.- Dynamic network configuration by this POST request on ESP32 AP webserver: 
+### 1️⃣ Connect to Wi-Fi (Dynamic Network Configuration)
 
-   http://192.168.4.1/connect?ssid=${wifiSSID}&password=${wifiPassword}&name=${audiocastName}&token=${token}
+Once the ESP32 starts in **Access Point (AP) mode**, you can configure its Wi-Fi settings by sending a **GET request** to the following URL:
 
-   wifiSSID: your wifi SSID (Mandatory)
-   wifiPassword: your wifi password (Mandatory)
-   audiocastName: used to name the device (Optional)
-   token: used for link token to user acount (Optional)
+```
+http://192.168.4.1/connect?ssid=<wifiSSID>&password=<wifiPassword>&name=<audiocastName>&token=<token>
+```
 
-2.- When ESP32 has access to network will connect to websocket server. Now can be controlled with these actions:
-   - {"action": "play", "url": streamUrl, "duration": duration, "offset": offset}
-   - {"action": "pause"}
-   - {"action": "volume", "value": newValue}
-   - {"action": "status"}
-   - {"action": "reset"}
+#### 🔧 Parameters
 
-   
+| Parameter  | Description                                            | Required |
+| ---------- | ------------------------------------------------------ | -------- |
+| `ssid`     | Your Wi-Fi network name (SSID)                         | ✅ Yes    |
+| `password` | Your Wi-Fi password (min. 8 characters for WPA2)       | ✅ Yes    |
+| `name`     | Optional name for the device (audiocastName)           | ❌ No     |
+| `token`    | Token to link device with user account (for API usage) | ❌ No     |
+
+> 📝 **Note:** If you don’t want to register the device with an API, you can bypass on `setupAPRoutes()` by ending on `/success` endpoint just after `handleWifiConnectionLogic()`. If you leave it and the registration fails, the ESP32 will automatically reboot.
+
+---
+
+### 2️⃣ Control the Device via WebSocket
+
+Once connected to Wi-Fi and the WebSocket server, the ESP32 can receive JSON-based control commands.
+
+#### 🎮 Available WebSocket Commands
+
+```json
+{ "action": "play", "url": "<streamUrl>", "duration": 120, "offset": 0 }
+{ "action": "pause" }
+{ "action": "volume", "value": 0.5 }
+{ "action": "status" }
+{ "action": "reset" }
+```
+
+| Action   | Description                                                                  |
+| -------- | ---------------------------------------------------------------------------- |
+| `play`   | Starts streaming from the given `url`, with optional `duration` and `offset` |
+| `pause`  | Pauses the current playback                                                  |
+| `volume` | Sets the volume level (range: `0.0` to `1.0`)                                |
+| `status` | Requests current status of the player                                        |
+| `reset`  | Reboots the device                                                           |
+
+---
 
 
-## 🖼️ Device Image
+## 🖼️ Hardware used on this project
 
-![ESP32-S3 Audio Board](https://github.com/ulivee/audiocast_v2/blob/main/pcb_render.png)
+<img src="https://github.com/ulivee/audiocast_v2/blob/main/IMG_7537.jpg" alt="ESP32-S3 Audio Board" width="50%" />
 
 
-## 📦 Features
 
-- ✅ MP3 decoding with Helix library
-- ✅ Streaming via HTTP or WebSocket
-- ✅ High-quality output via I2S to PCM5102
-- ✅ Embedded web server for control
-- ✅ JSON-based configuration
-- ✅ Persistent settings with Preferences
-- ✅ Real-time clock support via Time library
 
 ## 🧰 Hardware Requirements
 
 - ESP32-S3 based board (custom/commercial)
 - PCM5102 DAC connected via I2S
-- Optional: buttons, display, etc.
+- Audio Output connected to PCM5102
+
 
 ### Serial Connection for firmware upload
 
@@ -84,6 +110,8 @@ const unsigned long connectRetryInterval = 5000; // WebSocket retry every 5s
 | RXD     | TX            |
 | GND     | GND           |
 | VCC     | 3.3V          |
+
+or USB via UART bridge
 
 ## 🧪 Library Dependencies
 

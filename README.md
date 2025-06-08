@@ -105,13 +105,13 @@ Once connected to Wi-Fi and the WebSocket server, the ESP32 can receive JSON-bas
 { "action": "reset" }
 ```
 
-| Action   | Description                                                                       |
-| -------- | --------------------------------------------------------------------------------- |
-| `play`   | Starts streaming from the given `url` with given `duration` and optional `offset` |
-| `pause`  | Pauses the current playback                                                       |
-| `volume` | Sets the volume level (range: `0.0` to `1.0`)                                     |
-| `status` | Requests current status of the player                                             |
-| `reset`  | Reboots the device                                                                |
+| Action   | Description                                                                                  |
+| -------- | -------------------------------------------------------------------------------------------- |
+| `play`   | Starts streaming from the given `url` with given `duration` on seconds and optional `offset` |
+| `pause`  | Pauses the current playback                                                                  |
+| `volume` | Sets the volume level (range: `0.0` to `1.0`)                                                |
+| `status` | Requests current status of the player                                                        |
+| `reset`  | Reboots the device                                                                           |
 
 ---
 

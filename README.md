@@ -61,7 +61,33 @@ http://192.168.4.1/connect?ssid=<wifiSSID>&password=<wifiPassword>&name=<audioca
 | `name`     | Optional name for the device (audiocastName)           | ❌ No     |
 | `token`    | Token to link device with user account (for API usage) | ❌ No     |
 
-> 📝 **Note:** If you don’t want to register the device with an API, you can bypass on `setupAPRoutes()` by ending on `/success` endpoint just after `handleWifiConnectionLogic()`. If you leave it and the registration fails, the ESP32 will automatically reboot.
+
+> 📝 **Note:** If you don’t want to register the device with an API, you can bypass on `setupAPRoutes()` by ending on `/success` endpoint just after `handleWifiConnectionLogic()`. If you leave it and the registration fails, the ESP32 will automatically reboot. 
+
+To prevent this issue, update the redirect path in the handleConnectingToWifi() function by replacing /link with /success, as shown below:
+```js
+
+<script>
+  window.onload = function () {
+    fetch("/do_connect")
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          // Redirect to the success page
+          window.location.href = "/success";
+        } else {
+          // Redirect to failure page if Wi-Fi connection fails
+          window.location.href = "/wifi_fail";
+        }
+      })
+      .catch(() => {
+        // Redirect to failure page if request fails
+        window.location.href = "/wifi_fail";
+      });
+  };
+</script>
+```
+
 
 ---
 
@@ -101,7 +127,8 @@ Once connected to Wi-Fi and the WebSocket server, the ESP32 can receive JSON-bas
 
 - ESP32-S3 based board (custom/commercial)
 - PCM5102 DAC connected via I2S
-- Audio Output connected to PCM5102
+- Leds (Optional)
+- Buttons (Only for booting ESP32) 
 
 
 ### Serial Connection for firmware upload

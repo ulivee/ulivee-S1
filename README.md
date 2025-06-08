@@ -118,7 +118,7 @@ Once connected to Wi-Fi and the WebSocket server, the ESP32 can receive JSON-bas
 
 ## 🖼️ Hardware used on this project
 
-<img src="https://github.com/ulivee/audiocast_v2/blob/main/IMG_7537.jpg" alt="ESP32-S3 Audio Board" width="50%" />
+<img src="https://github.com/ulivee/audiocast_v2/blob/main/pcb.jpg" alt="ESP32-S3 Audio Board" width="50%" />
 
 
 

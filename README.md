@@ -158,9 +158,5 @@ These open-source libraries are used in this firmware:
 | `WebServer`           | Web server functionality | Espressif      | [GitHub](https://github.com/espressif/arduino-esp32) *(built-in)* |
 | `arduinoWebSockets`   | WebSocket communication  | gilmaimon      | [GitHub](https://github.com/gilmaimon/ArduinoWebsockets) |
 
-## 🔧 Installation
 
-1. Clone this repository:
-   ```bash
-   git clone https://github.com/ulivee/ULivee-S1.git
 

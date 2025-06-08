@@ -4,7 +4,8 @@ This firmware is built for the **ESP32-S3** microcontroller with **PCM5102 DAC**
 
 It supports wireless **MP3 audio streaming**, **decoding**, and **digital-to-analog output**, controlled via **WebSocket** commands. All code is in `main.ino`.
 
-The system supports both online radio streams and custom-hosted audio served via HTTP 206 Partial Content. For example, I'm using an AWS S3 bucket in combination with a Rails controller to deliver streamed content on demand.
+The system supports both online radio streams and custom-hosted audio served via HTTP 206 Partial Content. For example, I'm using AWS S3 bucket in combination with Rails controller to deliver streamed content to ESP32.
+
 ---
 
 ## ⚙️ Setup & Configuration
@@ -104,13 +105,13 @@ Once connected to Wi-Fi and the WebSocket server, the ESP32 can receive JSON-bas
 { "action": "reset" }
 ```
 
-| Action   | Description                                                                  |
-| -------- | ---------------------------------------------------------------------------- |
-| `play`   | Starts streaming from the given `url`, with optional `duration` and `offset` |
-| `pause`  | Pauses the current playback                                                  |
-| `volume` | Sets the volume level (range: `0.0` to `1.0`)                                |
-| `status` | Requests current status of the player                                        |
-| `reset`  | Reboots the device                                                           |
+| Action   | Description                                                                       |
+| -------- | --------------------------------------------------------------------------------- |
+| `play`   | Starts streaming from the given `url` with given `duration` and optional `offset` |
+| `pause`  | Pauses the current playback                                                       |
+| `volume` | Sets the volume level (range: `0.0` to `1.0`)                                     |
+| `status` | Requests current status of the player                                             |
+| `reset`  | Reboots the device                                                                |
 
 ---
 

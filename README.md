@@ -2,10 +2,9 @@
 
 This firmware is built for the **ESP32-S3** microcontroller with **PCM5102 DAC**.
 
-It supports wireless **MP3 audio streaming**, **decoding**, and **digital-to-analog output**, controlled via **WebSocket** commands. All code is in `main_v2.ino`.
+It supports wireless **MP3 audio streaming**, **decoding**, and **digital-to-analog output**, controlled via **WebSocket** commands. All code is in `main.ino`.
 
-Can be used with online radio streams or with your own music stored online privided by 206 HTTP (I am doing this last one with a AWS S3 bucket and Rails controller).
-
+The system supports both online radio streams and custom-hosted audio served via HTTP 206 Partial Content. For example, I'm using an AWS S3 bucket in combination with a Rails controller to deliver streamed content on demand.
 ---
 
 ## ⚙️ Setup & Configuration
